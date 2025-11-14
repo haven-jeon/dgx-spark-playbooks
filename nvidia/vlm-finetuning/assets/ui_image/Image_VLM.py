@@ -130,23 +130,32 @@ def initialize_state(config):
     if st.session_state["mode"] == "inference":
         st.session_state["base"]["process"] = start_vllm_server(
             config["model_id"], "base", config["max_seq_length"], st.session_state["base"]["port"])
-        finetuned_model_path = get_last_checkpoint(config["finetuned_model_id"])
-        if finetuned_model_path is not None:
+        
+        # === 수정: get_last_checkpoint 대신, config.json 존재 여부로 판단 ===
+        # 호스트의 파인튜닝된 모델 경로
+        host_finetuned_model_dir = config["finetuned_model_id"] # "saved_model"
+        
+        # 해당 경로에 config.json이 있는지 확인하여 모델 존재 여부를 판단
+        if os.path.exists(os.path.join(host_finetuned_model_dir, "config.json")):
+            # 컨테이너 내부의 절대 경로를 직접 지정
+            container_model_path = "/workspace/saved_model"
+            
             st.session_state["finetuned"]["process"] = start_vllm_server(
-                finetuned_model_path, "finetuned", config["max_seq_length"], st.session_state["finetuned"]["port"])
+                container_model_path, "finetuned", config["max_seq_length"], st.session_state["finetuned"]["port"])
 
         if not check_vllm_health("base", st.session_state["base"]["port"]):
             with st.spinner("Loading vLLM server for base model..."):
                 while not check_vllm_health("base", st.session_state["base"]["port"]):
                     time.sleep(1)
-            st.toast("Base model loaded", icon="✅", duration="short")
+            st.toast("Base model loaded", icon="✅")
 
-        if finetuned_model_path is not None:
+        # 모델 존재 여부 다시 확인
+        if os.path.exists(os.path.join(host_finetuned_model_dir, "config.json")):
             if not check_vllm_health("finetuned", st.session_state["finetuned"]["port"]):
                 with st.spinner("Loading vLLM server for finetuned model..."):
                     while not check_vllm_health("finetuned", st.session_state["finetuned"]["port"]):
                         time.sleep(1)
-                st.toast("Finetuned model loaded", icon="✅", duration="short")
+                st.toast("Finetuned model loaded", icon="✅")
 
     st.session_state["current_image"] = st.session_state.get("current_image", glob.glob("assets/image_vlm/images/*/*")[-1])
     st.session_state["train_process"] = st.session_state.get("train_process", None)
@@ -424,16 +433,19 @@ def inference_section():
     with columns[1]:
         with st.container(border=True, horizontal_alignment="center", vertical_alignment="center"):
             image_holder = st.empty()
+            caption_holder = st.empty() # 캡션을 위한 홀더 추가
+            
             image_holder.image(st.session_state["current_image"])
+            caption_holder.caption(st.session_state["current_image"]) # 초기 경로 표시
 
     with columns[3]:
         if st.button("🎲 Test another sample"):
-            while True:
-                current_image = random.choice(glob.glob("assets/image_vlm/images/*/*"))
-                if current_image != st.session_state["current_image"]:
-                    break
-            st.session_state["current_image"] = current_image
+            # === 수정: 전체 이미지 목록에서 무작위로 하나를 선택 ===
+            image_list = glob.glob("assets/image_vlm/images/*/*")
+            st.session_state["current_image"] = random.choice(image_list)
+            
             image_holder.image(st.session_state["current_image"])
+            caption_holder.caption(st.session_state["current_image"]) # 경로 업데이트
 
     columns = st.columns(2, gap="small")
     with columns[0]:
@@ -452,7 +464,7 @@ def inference_section():
     with columns[0]:
         prompt = st.text_input(
             "Prompt Input",
-            label_visibility="collapsed",
+            label_visibility="collapsed", 
             key="prompt_input",
             on_change=lambda: st.session_state.update(prompt=st.session_state["prompt_input"])
         )

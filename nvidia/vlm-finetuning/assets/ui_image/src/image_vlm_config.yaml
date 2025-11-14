@@ -38,7 +38,7 @@ train:
     dataset_id: data
 
   hyperparameters:
-    steps: 100
+    steps: 1000
     batch_size: 4
     enable_grpo: true
     num_generations: 2
